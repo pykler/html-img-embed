@@ -2,27 +2,88 @@
 Script to embed imgs into html using base64 encode
 '''
 
+import os
 import sys
 import base64
 import re
+from urllib2 import urlopen as _urlopen
+
+from contextlib import contextmanager
 
 imgsrc_re = re.compile(r'<img[^>]+src="([^ ]+)"', re.IGNORECASE)
+img_na = 'data:image/jpeg;base64,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'
 
-f = sys.stdin
-d = f.read()
-n = []
+class ReadException(Exception):
+    pass
 
-last = 0
-for m in imgsrc_re.finditer(d):
-    uri = m.groups()[0]
-    rep = m.group()
-    start, end = m.span()
-    n.append(d[last:start])
-    imgtype = uri.split('.')[-1].lower() # simple img type inference
-    with open(uri, 'r+') as imgf:
-        n.append(rep.replace(uri, "data:image/%s;base64,%s" % (
-            imgtype,
-            base64.b64encode(imgf.read()))))
-    last = end
+@contextmanager
+def urlopen(*args, **kwargs):
+    f = _urlopen(*args, **kwargs)
+    try:
+        yield f
+    finally:
+        f.close()
 
-print ''.join(n)
+def fread(fn):
+    '''
+    Attempt to read a file, local or a web url and return its contents
+    Returns a tuple (s,rfn) where s is the file contents and rfn is the real fn
+    (NOTE: rfn may != fn if there were any web redirects)
+    '''
+    rfn = fn
+    for openfunc in open,urlopen:
+        try:
+            with openfunc(fn) as f:
+                s = f.read()
+                if openfunc is urlopen:
+                    rfn = f.url
+                return s,rfn
+        except (ValueError,IOError):
+            pass
+    raise ReadException("Couldn't open file '%s' (not url or local file)" %fn)
+
+def b64img(uri, baseuri):
+    '''
+    Download and base64 encode the img at `uri`
+    `baseuri` is the uri of the original
+    '''
+    if uri.startswith('.'):
+        furi = '/'.join([baseuri, uri])
+    else:
+        furi = uri
+    return base64.b64encode(fread(furi)[0])
+
+def process_html(d, uri):
+    '''
+    Embed images into the html represented by string `d`
+    `uri` is the uri of the file represented in string d
+    '''
+    bdir = os.path.dirname(uri) or '.'
+    n = []
+    last = 0
+    for m in imgsrc_re.finditer(d):
+        uri = m.groups()[0]
+        rep = m.group()
+        start, end = m.span()
+        n.append(d[last:start])
+        imgtype = os.path.splitext(uri)[1].strip('.').lower() # simple img type inference
+        try:
+            n.append(rep.replace(uri, "data:image/%s;base64,%s" % (
+                imgtype,
+                b64img(uri, bdir))))
+        except ReadException:
+            n.append(rep.replace(uri, img_na))
+        last = end
+    return ''.join(n)
+
+def main():
+    if len(sys.argv) > 1:
+        fn = sys.argv[1]
+        d,fn = fread(fn)
+    else:
+        d = sys.stdin.read()
+        fn = './'
+    print process_html(d, fn)
+
+if __name__ == '__main__':
+    main()
